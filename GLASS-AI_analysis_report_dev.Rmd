@@ -835,7 +835,7 @@ run_omnibus_test <- function(xdf, xformula, useParametric = "auto", useWelch = "
               Defaulting to 0 ('auto').")
       useParametric <- "auto"
     } else {
-      norm_violation_count <- sum(stats_summary[[5]]$`p.adj` < 0.05)
+      norm_violation_count <- sum(na.omit(stats_summary[[5]]$`p.adj`) < 0.05)
       norm_violation_proportion <- norm_violation_count / length(stats_summary[[5]]$`p.adj`)
       if (norm_violation_proportion > useParametric) {
         useParametric = FALSE
@@ -1153,7 +1153,8 @@ plotlistlist2tabs <- function(plot_list_list, caption_list,
 ```{r parameter_definition, message = FALSE, warning = FALSE}
 #### FILES####
 # path to directory where files are stored
-dir_path <- "path/to/analysis/files"
+dir_path <- normalizePath("path/to/analysis/files",
+                          winslash = "/")
 # path to slide info file
 path_to_Slide_Info <- file.path(dir_path, "Slide IDs.xlsx")
 # path to whole slide summary file
@@ -1341,31 +1342,30 @@ Slide_Info <- read_table_file(path_to_Slide_Info) %>%
 # make image_id column if it labeled as H&E image ID instead (e.g. for IHC)
 if ("h_e_image_id" %in% colnames(Slide_Info)) {
   Slide_Info <- Slide_Info %>% mutate(image_id = h_e_image_id)
-}
-if ("he_image_id" %in% colnames(Slide_Info)) {
+} else if ("he_image_id" %in% colnames(Slide_Info)) {
   Slide_Info <- Slide_Info %>% mutate(image_id = he_image_id)
-}
-if ("hne_image_id" %in% colnames(Slide_Info)) {
+}else if ("hne_image_id" %in% colnames(Slide_Info)) {
   Slide_Info <- Slide_Info %>% mutate(image_id = hne_image_id)
-}
-if ("slide_id" %in% colnames(Slide_Info)) {
+}else if ("slide_id" %in% colnames(Slide_Info)) {
   Slide_Info <- Slide_Info %>% mutate(image_id = slide_id)
-}
+}else { Slide_Info <- Slide_Info %>% mutate(image_id = !!as.name(subindividual_var))}
+
 
 # read in per slide tumor area sheet; convert names to snake_case; convert percentages to decimals
 Slide_Areas <- read_table_file(path_to_slide_areas) %>%
   clean_names(parsing_option = 3) %>% # convert names to snake_case
   mutate_if(is.percentage, ~ as.numeric(sub("%", "", .)) / 100)
 
-# make slide_id column if it labeled as H&E image ID instead (e.g. for IHC)
-if ("h_e_image_id" %in% colnames(Slide_Areas)) {
-  Slide_Areas <- Slide_Areas %>% mutate(image_id = h_e_image_id)
-}
-if ("hne_image_id" %in% colnames(Slide_Areas)) {
-  Slide_Areas <- Slide_Areas %>% mutate(image_id = hne_image_id)
-}
-if ("slide_id" %in% colnames(Slide_Areas)) {
-  Slide_Areas <- Slide_Areas %>% mutate(image_id = slide_id)
+if (!("image_id" %in% colnames(Slide_Areas))){
+  if ("h_e_image_id" %in% colnames(Slide_Areas)) {
+    Slide_Areas <- Slide_Areas %>% mutate(image_id = h_e_image_id)
+  } else if ("he_image_id" %in% colnames(Slide_Areas)) {
+    Slide_Areas <- Slide_Areas %>% mutate(image_id = he_image_id)
+  }else if ("hne_image_id" %in% colnames(Slide_Areas)) {
+    Slide_Areas <- Slide_Areas %>% mutate(image_id = hne_image_id)
+  }else if ("slide_id" %in% colnames(Slide_Areas)) {
+    Slide_Areas <- Slide_Areas %>% mutate(image_id = slide_id)
+  }else { Slide_Areas <- Slide_Areas %>% mutate(image_id = !!as.name(subindividual_var))}
 }
 
 # read in merged individual tumor area sheet or import individual files from directory
