@@ -13,7 +13,7 @@ output:
 editor_options:
   markdown:
     wrap: 80
-script_updated: 05/29/24
+script_updated: 01/09/2024
 ---
 
 # Description
@@ -699,8 +699,6 @@ run_stats_summary <- function(xdf, xformula) {
   homo_var_test <- NULL
   homo_var_violation <- NULL
   # test for homogeneity of variance
-  tryCatch(
-    {
       homo_var_test <- s20x::levene.test(xformula, xdf, show.table = FALSE)
       homo_var_test <- cbind(
         homo_var_test$df,
@@ -709,42 +707,33 @@ run_stats_summary <- function(xdf, xformula) {
         c(paste(homo_var_test$f.value), "", ""),
         c(paste(homo_var_test$p.value), "", "")
       )
-      dimnames(homo_var_test) <- list(c("Between Groups", "Within Groups", "Total"), c("Df", "Sum Squares", "Mean Square", "F-statistic", "p-value"))
+      dimnames(homo_var_test) <- list(c("Between Groups", "Within Groups", "Total"), 
+                                      c("df", "Sum Squares", "Mean Square", "F-statistic", "p-value")
+                                      )
       homo_var_test <- as_tibble(homo_var_test) %>% mutate_all(type.convert, as.is = TRUE)
       homo_var_test$comparison <- c("Between Groups", "Within Groups", "Total")
-      homo_var_test <- homo_var_test %>% relocate(comparison, before = Df)
+      homo_var_test <- homo_var_test %>% relocate(comparison, df)
       homo_var_violation <- homo_var_test$`p-value`[[1]] < 0.05
-    },
-    error = function(err) {
-      parent_error <- trace_error_parent(err)
+      if (is.na(homo_var_violation)){
       homo_var_test <- paste(
         "Could not compute Levene test for homogeneity of variance due to an error.
-                           Presuming that variance is not homogenous.\n ERROR:",
-        parent_error$message
+        Presuming that variance is not homogenous.\n"
       )
       homo_var_violation <- TRUE
-    }
-  )
+      }
 
   # test for normal distribution of data
   #-group data by independent variable(s) from formula
   norm_test <- NULL
   norm_violation <- NULL
-  tryCatch(
-    {
-      norm_test <- permissive_shapiro(xdf, xformula)
-      norm_violation <- sum(norm_test$p.adj < 0.05, na.rm = TRUE) > 0
-    },
-    error = function(err) { # catch
-      parent_error <- trace_error_parent(err)
-      norm_test <- paste(
-        "Could not compute Shapiro's test for normality due to an error.
-                           Presuming that data is not normally distributed.\n",
-        parent_error$message
-      )
-      norm_violation <- TRUE
-    }
-  )
+  norm_test <- permissive_shapiro(xdf, xformula)
+  if (length(na.omit(norm_test$p.adj)) == 0) { 
+    norm_test <- paste("Could not compute Shapiro's test for normality due to an error.
+                           Presuming that data is not normally distributed.\n")
+    norm_violation <- TRUE
+  } else {
+    norm_violation <- sum(norm_test$p.adj < 0.05, na.rm = TRUE) > 0
+         }
 
   out_list <- list(
     "summary_stats" = summary_stats,
@@ -1150,11 +1139,11 @@ plotlistlist2tabs <- function(plot_list_list, caption_list,
 }
 ```
 
-```{r parameter_definition, message = FALSE, warning = FALSE}
+```{r USER_INPUT, message = FALSE, warning = FALSE}
 #### FILES####
 # path to directory where files are stored
-dir_path <- normalizePath("path/to/analysis/files",
-                          winslash = "/")
+dir_path <- "path/to/analysis/files"
+dir_path <- normalizePath(dir_path,winslash = "/") #convert Windows paths if needed
 # path to slide info file
 path_to_Slide_Info <- file.path(dir_path, "Slide IDs.xlsx")
 # path to whole slide summary file
@@ -1177,33 +1166,58 @@ tumor_size_threshold <- 500
 # define variables to use for grouping
 # grouping variable names should be the column name in the `Slide_Info` spreadsheet
 ## full_grouping_vars <- c("grouping_var1","grouping_var2",... "grouping_varN")
-# grouping variable labels should be the formatted label for each grouping variable
-full_grouping_vars <- c("grouping_var")
-full_grouping_vars_labels <- c("Grouping Variable")
+full_grouping_vars <- c("grouping_var1","grouping_var2")
+# these are formatted text labels for each grouping variable that will used when making graphs
+full_grouping_vars_labels <- c("Grouping Variable 1", "grouping_var2")
 
 # define order of groups within each grouping variable
 # var_name = c(var_val1, var_val2,... var_valN)
 # repeat for each variable included in `full_grouping_vars` above
+#' full_grouping_order <- list(
+#'  grouping_var1 = c(
+#'    "group1",
+#'    "group2",
+#'    "group3"
+#'  ),
+#'  grouping_var2 = c(
+#'    "groupA",
+#'    "groupB"
+#'  )
+#')
+
 full_grouping_order <- list(
-  genotype_abbreviation = c(
+  grouping_var1 = c(
     "group1",
     "group2",
     "group3"
+  ),
+  grouping_var2 = c(
+    "groupA",
+    "groupB"
   )
 )
 
+# make formatted labels for each grouping variable level, if desired.
+# use the same structure as above (or just keep full_grouping_order_labels <- full_grouping_order)
+#' full_grouping_order_labels <- list(
+#' grouping_var1 = c(
+#' "Group 1",
+#' "Group 2",
+#' "Group 3"
+#' ),
+#' grouping_var2 = c(
+#' "Group A",
+#' "Group B"
+#' )
+#' )
 full_grouping_order_labels <- full_grouping_order
-
-full_grouping_label <- paste(full_grouping_vars_labels, collapse = " : ")
-full_grouping_grade_label <- paste(full_grouping_label, "Tumor Grade", sep = " : ")
-full_group_list <- expand_grid(!!!full_grouping_order) %>% unite("full_group", sep = ":")
 
 # define variable used to label individuals
 individual_var <- "animal_id" # title of individual variable column in input files
 individual_var_label <- "Animal ID"
 individual_unit <- "Animal"
 
-# define variable used to label parts from individuals
+# define variable used to label parts from individuals (i.e., multiple images from a single individual)
 subindividual_var <- "image_id" # title of sub-individual variable column in input files
 subindividual_var_label <- "Slide ID"
 subindividual_unit <- "Slide"
@@ -1211,8 +1225,10 @@ subindividual_unit <- "Slide"
 #define variables and labels to be used for adding information about individuals to plotly hoverinfo
 #set these to be the same as full_grouping_vars and full_grouping_vars_labels to omit
 ## leaving them empty (or NA, NULL, etc.) breaks select() calls in the report.
-sample_info_vars <- c("info1,info2")
-sample_info_vars_labels <- c("Information 1","Information 2")
+#' sample_info_vars <- c("info1","info2")
+#' sample_info_vars_labels <- c("Information 1","Information 2")
+sample_info_vars <- full_grouping_vars
+sample_info_vars_labels <- full_grouping_vars_labels
 
 
 #### GRAPHING###
@@ -1259,9 +1275,9 @@ plotly_margins <- list(l = 50, r = 50, b = 50, t = 50)
 # multiple grouping variables are separated by a ":"
 # use the same values as in `full_grouping_order` above
 full_group_comparisons <- list(
-  c("group1","group2"),
-  c("group1","group3"),
-  c("group2","group3")
+  c("group1:groupA","group2:groupA"),
+  c("group1:groupA","group3:groupA"),
+  c("group2:groupB","group3:groupB")
 )
 
 # skip statistics if you know they will not work (i.e., < 3 samples in groups)
@@ -1273,23 +1289,14 @@ skip_stats <- FALSE
 ## this means that useParametric = 1 is equivalent to TRUE and useParametric = 0 is equivalent to FALSE
 
 # comparisons between groups of individuals (Graphs 001 - 027)
-parametric_test_individuals = 0
+parametric_test_individuals = "auto"
 # comparisons between groups of individual tumors (Graphs 027 - 040)
 parametric_test_tumors = FALSE
 
-# generate pairwise comparisons for group:tumor_grade combinations
-full_group_tumor_grade_comparisons <- list()
-comparison_count <- 0
-for (i in 1:5) {
-  for (j in 1:(length(full_group_comparisons))) {
-    comparison_count <- comparison_count + 1
-    full_group_tumor_grade_comparisons[[comparison_count]] <-
-      c(paste0(full_group_comparisons[[j]][[1]], ":", i), paste0(full_group_comparisons[[j]][[2]], ":", i))
-  }
-}
-
 
 #### IHC####
+do_ihc_analysis <- FALSE
+
 # manually define stain list
 ihc_stain_list <- c()
 ihc_stain_labels <- c()
@@ -1317,7 +1324,6 @@ if (file.exists(path_to_logfile)) {
 }
 
 
-do_ihc_analysis <- TRUE
 # skip IHC analysis if no data provided
 if (!(file.exists(path_to_ihc_analysis_folder)) || path_to_ihc_analysis_folder == "") {
   path_to_ihc_analysis_folder <- "No IHC analysis to perform."
@@ -1404,6 +1410,12 @@ if (redundant_fill) {
   area_fill <- NULL
   tumor_fill <- NULL
 }
+
+#this makes a formatted label for the full grouping variable from each grouping variables
+full_grouping_label <- paste(full_grouping_vars_labels, collapse = " : ")
+#this makes a full grouping label for each tumor grade
+full_grouping_grade_label <- paste(full_grouping_label, "Tumor Grade", sep = " : ")
+full_group_list <- expand_grid(!!!full_grouping_order) %>% unite("full_group", sep = ":")
 
 # make directory to store graph data tables
 dir.create(path_to_graph_data)
@@ -1589,7 +1601,16 @@ full_group_count <- nrow(full_group_list)
 full_group_tumor_grade_level_cross <-
   expand_grid(full_group_list, c(1:5))
 
-
+# generate pairwise comparisons for group:tumor_grade combinations
+full_group_tumor_grade_comparisons <- list()
+comparison_count <- 0
+for (i in 1:5) {
+  for (j in 1:(length(full_group_comparisons))) {
+    comparison_count <- comparison_count + 1
+    full_group_tumor_grade_comparisons[[comparison_count]] <-
+      c(paste0(full_group_comparisons[[j]][[1]], ":", i), paste0(full_group_comparisons[[j]][[2]], ":", i))
+  }
+}
 # (full_group,tumor_grade)
 full_group_tumor_grade_levels <- paste0(
   "(", full_group_tumor_grade_level_cross[[1]], ",",
@@ -2260,7 +2281,7 @@ plot1 <- plot1 +
 # convert to plotly graph and format
 ggplotly_subtitle(plot1, hoverinfo = "text") %>%
   layout(
-    width = min(40 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     xaxis = list(
       tickangle = -90,
       tickfont = list(size = min(
@@ -2480,7 +2501,7 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
         0.8 * min(50 * individual_count, 800) / individual_count
       ))
     ),
-    width = min(100 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     margin = plotly_margins
   ) %>%
   format_plotly_trace("bar", width = 0.7) %>%
@@ -2890,7 +2911,7 @@ plot1 <- graph_data %>%
         0.8 * min(100 * individual_count, 800) / full_group_count
       ))
     ),
-    width = min(100 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     margin = plotly_margins
   ) %>%
   format_plotly_legend("full_group", full_group_grade_info_list, "label")
@@ -3257,7 +3278,7 @@ plot1 <- plot1 +
 
 ggplotly_subtitle(plot1, hoverinfo = "text") %>%
   layout(
-    width = min(50 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     hoverdistance = 1,
     xaxis = list(tickangle = -90, tickfont = list(size = min(0.8 * min(50 * individual_count, 800) / individual_count, 10))),
     legend = list(title = list(text = paste0("<b>", paste0(c(full_grouping_vars_labels), collapse = "\n"), "</b>"))),
@@ -4340,7 +4361,7 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     ),
     autosize = F,
     xaxis = list(tickangle = -90, tickfont = list(size = min(10, 0.8 * min(50 * individual_count, 800) / individual_count))),
-    width = min(c(100 * individual_count, 800)),
+    width = min(c(150 * individual_count, 800)),
     margin = plotly_margins
   )
 
@@ -4547,7 +4568,7 @@ plot1 <- graph_data %>%
 # convert to plotly graph and format
 ggplotly_subtitle(plot1, hoverinfo = "text") %>%
   layout(
-    width = min(40 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     xaxis = list(
       tickangle = -90,
       tickfont = list(size = min(
@@ -4803,7 +4824,7 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
         0.8 * min(50 * individual_count, 800) / individual_count
       ))
     ),
-    width = min(100 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     margin = plotly_margins
   )
 
@@ -5393,7 +5414,7 @@ plot1 <- graph_data %>%
 # convert to plotly graph and format
 ggplotly_subtitle(plot1, hoverinfo = "text") %>%
   layout(
-    width = min(80 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     xaxis = list(
       tickangle = -90,
       tickfont = list(size = min(
@@ -5799,7 +5820,7 @@ plot1 <- graph_data %>%
 # convert to plotly graph and format
 ggplotly_subtitle(plot1, hoverinfo = "text") %>%
   layout(
-    width = min(80 * individual_count, 800),
+    width = min(150 * individual_count, 800),
     xaxis = list(
       tickangle = -90,
       tickfont = list(size = min(
@@ -6248,14 +6269,13 @@ for (fg in present_full_group_labels$label) {
       size = .1,
       aes(
         x = tumor_uid,
-        y = abs((as.numeric(tumor_grade) - (count_tumor_grades_analyzed + 1))) /
-          count_tumor_grades_analyzed
+        y = as.numeric(levels(tumor_grade))[tumor_grade]/(count_tumor_grades_analyzed+1)
       )
     ) +
     scale_y_continuous(
       name = "Proportion of tumor area",
       sec.axis = sec_axis(
-        trans = ~ . * count_tumor_grades_analyzed,
+        trans = ~ . * (count_tumor_grades_analyzed+1),
         name = "Tumor Grade"
       )
     ) +
