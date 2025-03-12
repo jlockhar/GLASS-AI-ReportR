@@ -7,15 +7,176 @@ output:
   html_document:
     code_folding: hide
     df_print: kable
-  html_notebook:
-    code_folding: hide
-    df_print: kable
 editor_options:
   markdown:
     wrap: 80
-script_updated: 01/09/2024
+script_updated: March 12, 2025
 ---
 
+```{r USER_INPUT, include = FALSE, message = FALSE, warning = FALSE}
+#### FILES####
+# path to directory where files are stored
+## if copying path on Windows '\' needs to be replaced with '/' or '\\'
+dir_path <- "path/to/analysis/files"
+dir_path <- normalizePath(dir_path,winslash = "/") #convert Windows paths if needed
+# path to slide info file
+path_to_Slide_Info <- file.path(dir_path, "Slide IDs.xlsx")
+# path to whole slide summary file
+path_to_slide_areas <- file.path(dir_path, "Whole slide summary.xlsx")
+# path to merged tumor area file or directory containing individual slide results
+path_to_tumor_areas <- file.path(dir_path,"GLASS-AI output")
+# define path to folder holding individual IHC stain sub folders labeled by stain
+path_to_ihc_analysis_folder <- "" #file.path(dir_path,"IHC stains")
+# path to GLASS-AI logfile if you want to include in report
+path_to_logfile <- "" #file.path(dir_path, "GLASS-AI output", "GLASS-AI_log_####.txt")
+# define output location for data tables used to make each graph
+path_to_graph_data <- file.path(dir_path, "Graph Data")
+
+
+#### FILTERING####
+# define optional tumor size threshold in sq. micron
+tumor_size_threshold <- 500
+
+#### GROUPING####
+# define variables to use for grouping
+# grouping variable names should be the column name in the `Slide_Info` spreadsheet
+## full_grouping_vars <- c("grouping_var1","grouping_var2",... "grouping_varN")
+full_grouping_vars <- c("grouping_var1","grouping_var2")
+# these are formatted text labels for each grouping variable that will used when making graphs
+full_grouping_vars_labels <- c("Grouping Variable 1", "Grouping Variable 2")
+
+# define order of groups within each grouping variable
+# var_name = c(var_val1, var_val2,... var_valN)
+# repeat for each variable included in `full_grouping_vars` above
+#' full_grouping_order <- list(
+#'  grouping_var1 = c(
+#'    "group1",
+#'    "group2",
+#'    "group3"
+#'  ),
+#'  grouping_var2 = c(
+#'    "groupA",
+#'    "groupB"
+#'  )
+#')
+
+full_grouping_order <- list(
+  grouping_var1 = c(
+    "group1",
+    "group2",
+    "group3"
+  ),
+  grouping_var2 = c(
+    "groupA",
+    "groupB"
+  )
+)
+
+# make formatted labels for each grouping variable level, if desired.
+# use the same structure as above (or just keep full_grouping_order_labels <- full_grouping_order)
+#' full_grouping_order_labels <- list(
+#' grouping_var1 = c(
+#' "Group 1",
+#' "Group 2",
+#' "Group 3"
+#' ),
+#' grouping_var2 = c(
+#' "Group A",
+#' "Group B"
+#' )
+#' )
+full_grouping_order_labels <- full_grouping_order
+
+# define variable used to label individuals
+individual_var <- "animal_id" # title of individual variable column in input files
+individual_var_label <- "Animal ID"
+individual_unit <- "Animal"
+
+# define variable used to label parts from individuals (i.e., multiple images from a single individual)
+subindividual_var <- "image_id" # title of sub-individual variable column in input files
+subindividual_var_label <- "Slide ID"
+subindividual_unit <- "Slide"
+
+#define variables and labels to be used for adding information about individuals to plotly hoverinfo
+#set these to be the same as full_grouping_vars and full_grouping_vars_labels to omit
+## leaving them empty (or NA, NULL, etc.) breaks select() calls in the report.
+#' sample_info_vars <- c("info1","info2")
+#' sample_info_vars_labels <- c("Information 1","Information 2")
+sample_info_vars <- full_grouping_vars
+sample_info_vars_labels <- full_grouping_vars_labels
+
+
+#### GRAPHING###
+# define color for each group using colorblind safe palette
+group_colors <-  c(
+  "black",
+  "dodgerblue2",
+  "#E31A1C", # red
+  "green4",
+  "#6A3D9A", # purple
+  "#FF7F00", # orange
+  "gold1",
+  "skyblue2",
+  "#FB9A99", # lt pink
+  "palegreen2",
+  "#CAB2D6", # lt purple
+  "#FDBF6F", # lt orange
+  "gray70",
+  "khaki2",
+  "maroon",
+  "orchid1",
+  "deeppink1",
+  "blue1",
+  "steelblue4",
+  "darkturquoise",
+  "green1",
+  "yellow4",
+  "yellow3",
+  "darkorange4",
+  "brown"
+)
+# set color scheme for tumor grades (Grade 5, Grade 4, Grade 3, Grade 2, Grade 1)
+tumor_grade_labels <- c("Grade 5","Grade 4", "Grade 3", "Grade 2", "Grade 1")
+tumor_grade_colors <- c("purple","red", "yellow", "blue", "green")
+names(tumor_grade_colors) <- c("5","4","3","2","1")
+
+# should tumor grades be filled with color when used for x-axis?
+redundant_fill <- FALSE
+# margins for plotly objects
+plotly_margins <- list(l = 50, r = 50, b = 50, t = 50)
+
+#### STATS####
+# define comparisons of interest for statistics
+# multiple grouping variables are separated by a ":"
+# use the same values as in `full_grouping_order` above
+full_group_comparisons <- list(
+  c("group1:groupA","group2:groupA"),
+  c("group1:groupA","group3:groupA"),
+  c("group2:groupB","group3:groupB")
+)
+
+# skip statistics if you know they will not work (i.e., < 3 samples in groups)
+skip_stats <- FALSE
+
+# set global parametric/non-parametric test choices
+# TRUE: use parametric, FALSE: use non-parametric, "auto": use parametric if no violation of normality (strict)
+# values >= 0 and <= 1: use parametric if less than this proportion of groups violate normality assumption 
+## this means that useParametric = 1 is equivalent to TRUE and useParametric = 0 is equivalent to FALSE
+
+# comparisons between groups of individuals (Graphs 001 - 027)
+parametric_test_individuals = "auto"
+# comparisons between groups of individual tumors (Graphs 027 - 040)
+parametric_test_tumors = FALSE
+
+
+#IHC analysis is still a work-in-progress#
+#### IHC####
+do_ihc_analysis <- FALSE
+
+# manually define stain list
+ihc_stain_list <- c()
+ihc_stain_labels <- c()
+```
 # Description
 
 
@@ -78,11 +239,14 @@ knitr::opts_chunk$set(
   warning = FALSE,
   echo = FALSE
 )
-opts_knit$set(eval.after = "fig.cap")
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(results = 'asis')
+knitr::opts_knit$set(eval.after = "fig.cap")
 options(knitr.table.format = "pipe")
 ```
 
-```{css css_setup, echo=FALSE}
+```{css css_setup, include = FALSE}
 p.caption {
   font-size: 0.9em;
   font-style: italic;
@@ -103,22 +267,54 @@ div.svg-container {
 }
 ```
 
-```{r custom_functions, message = FALSE, warning = FALSE}
-#' add formatted labels as new column in a dataframe using lists of variable names and labels
-#' 
-#' @description
-#' Create a list of formatted labels and variables to include in plotly hoverinfo
-#' 
-#' @param xdf A dataframe that includes the columns named in `var_names`.
-#' 
-#' @param var_names A character vector of variable names to make labels for.
-#' 
-#' @param var_labels A character vector of formatted labels for each variable in `var_names`.
-#' 
-#' @param label_col_name A string for the name of the column added to `xdf` to store the formatted labels.
-#' 
-#' @returns Returns the input data frame with an additional column containing formatted labels (<b>var_label: </b> var_name </br>)
+```{r custom_functions, include = FALSE, message = FALSE, warning = FALSE}
+
+collapse_ggplotly_geom_bar <- function(ggplotly_obj, reverse = TRUE) {
+  #' modify bar graphs produced by ggplotly to collapse after filtering like native plotly graphs
+  #'
+  #' @description
+  #' Sets the 'base' value of each bar trace in a ggplotly object to empty to enable collapsing after data filtering
+  #' 
+  #' @param ggplotly_obj An interactive plotly graph generated using ggplotly()
+  wrong_type_count <- 0
+  # set 'base' to empty
+  for (i in 1:length(ggplotly_obj$x$data)) {
+    if (ggplotly_obj$x$data[[i]]$type == "bar") {
+      ggplotly_obj$x$data[[i]]$base <- c()
+    } else {
+      wrong_type_count <- wrong_type_count + 1
+    }
+  }
+  # invert data within legend groups
+  if (reverse) {
+    legendgroups <- unlist(sapply(ggplotly_obj$x$data, `[`, "legendgroup"))
+    for (i_legendgroup in unique(legendgroups)) {
+      legendgroup_indices <- which(legendgroups == i_legendgroup)
+      ggplotly_obj$x$data[legendgroup_indices] <- rev(ggplotly_obj$x$data[legendgroup_indices])
+    }
+  }
+  if (wrong_type_count > 0) {
+    simpleWarning(sprintf("%d traces were not of 'bar' type.", wrong_type_count))
+  }
+  return(ggplotly_obj)
+}
+
+
 make_formatted_labels <- function(xdf, var_names, var_labels, label_col_name){
+  #' add formatted labels as new column in a dataframe using lists of variable names and labels
+  #' 
+  #' @description
+  #' Create a list of formatted labels and variables to include in plotly hoverinfo
+  #' 
+  #' @param xdf A dataframe that includes the columns named in `var_names`.
+  #' 
+  #' @param var_names A character vector of variable names to make labels for.
+  #' 
+  #' @param var_labels A character vector of formatted labels for each variable in `var_names`.
+  #' 
+  #' @param label_col_name A string for the name of the column added to `xdf` to store the formatted labels.
+  #' 
+  #' @returns Returns the input data frame with an additional column containing formatted labels (<b>var_label: </b> var_name </br>)
   xdf <- xdf %>% 
     rowwise() %>%
     mutate(!!label_col_name := paste0("<b>",
@@ -131,22 +327,22 @@ make_formatted_labels <- function(xdf, var_names, var_labels, label_col_name){
   return(xdf)
 }
 
-#' Test normality of data with and without log normalization
-#' 
-#' @description
-#' Performs a Shapiro-Wilk test of normality on data and a log normalized version of the data to determine if log normalization should be applied.
-#' 
-#' @param xdf A dataframe that includes the columns named in `xformula`.
-#' 
-#' @param xformula A formula defining the response and independent variables to be used in later analyses.
-#' 
-#' @param xbase The base to be used for log transformation (Default = 10)
-#' 
-#' @returns Returns `TRUE` if data should be log normalized and `FALSE` if it should not.
-#' 
-#' @noRd
+
 test_log_normalization <- function(xdf, xformula, xbase = 10) {
-  
+  #' Test normality of data with and without log normalization
+  #' 
+  #' @description
+  #' Performs a Shapiro-Wilk test of normality on data and a log normalized version of the data to determine if log normalization should be applied.
+  #' 
+  #' @param xdf A dataframe that includes the columns named in `xformula`.
+  #' 
+  #' @param xformula A formula defining the response and independent variables to be used in later analyses.
+  #' 
+  #' @param xbase The base to be used for log transformation (Default = 10)
+  #' 
+  #' @returns Returns `TRUE` if data should be log normalized and `FALSE` if it should not.
+  #' 
+  #' @noRd
     # validate input classes
   if (sum(class(xdf) == "dataframe") == 0) {
     errorCondition("Input provided for 'dataframe' was not a dataframe")
@@ -230,28 +426,29 @@ test_log_normalization <- function(xdf, xformula, xbase = 10) {
   
 }
 
-#' Convert a list of character vectors into a single formatted character vector with separating punctuation and conjunction.
-#' 
-#' @description
-#' Creates a formatted character vector from a list of character vectors based on standard English conventions.
-#' * Single item lists are returned as-is.
-#' * Two item lists are returned with the items separated by the provided `conjunction`.
-#' * Three or more item lists are returned with the items separated by `punctuation`.
-#' 
-#' @param text A vector or list of character vectors that are to be joined.
-#' 
-#' @param sep A character vector that will be inserted between elements in `text`. (Default = " ")
-#' 
-#' @param punctuation A character vector that will be inserted between elements in `text` before `sep`. (Default = ",")
-#' 
-#' @param conjunction A character vecotr that will be inserted between the last two elements in `text`. (Default = "and")
-#' 
-#' @param oxford If true, inserts `punctuation` before `conjunction` betweeen the last two elements in `text`. (i.e, the Oxford comma) 
-#' 
-#' @returns Outputs a single character vector after formatting the input text.
-#' 
-#' @noRd
 paste_to_text_list <- function(text, sep = " ", punctuation = ",", conjunction = "and", oxford = TRUE) {
+  #' Convert a list of character vectors into a single formatted character vector with separating punctuation and conjunction.
+  #' 
+  #' @description
+  #' Creates a formatted character vector from a list of character vectors based on standard English conventions.
+  #' * Single item lists are returned as-is.
+  #' * Two item lists are returned with the items separated by the provided `conjunction`.
+  #' * Three or more item lists are returned with the items separated by `punctuation`.
+  #' 
+  #' @param text A vector or list of character vectors that are to be joined.
+  #' 
+  #' @param sep A character vector that will be inserted between elements in `text`. (Default = " ")
+  #' 
+  #' @param punctuation A character vector that will be inserted between elements in `text` before `sep`. (Default = ",")
+  #' 
+  #' @param conjunction A character vector that will be inserted between the last two elements in `text`. (Default = "and")
+  #' 
+  #' @param oxford If true, inserts `punctuation` before `conjunction` between the last two elements in `text`. (i.e, the Oxford comma) 
+  #' 
+  #' @returns Outputs a single character vector after formatting the input text.
+  #' 
+  #' @noRd
+
   tryCatch(
     {
       text <- as.character(text)
@@ -277,23 +474,25 @@ paste_to_text_list <- function(text, sep = " ", punctuation = ",", conjunction =
   }
 }
 
-#' Combine individual GLASS-AI image tumor analysis files in a directory.
-#' 
-#' @description
-#' Iterate over each tabular file in `dir_path`, keeping only those images also found in `image_info_df`
-#' * Expected file name must match an entry in the "slide_id" column of `image_info_df`.
-#' * `.xlsx`, `.xls`, `.csv`, and `.tsv` are all considered valid file types.
 
-#' @param dir_path Formatted character vector containing the path to the directory with the image analysis files produced by GLASS-AI
-#' 
-#' @param image_info Data frame or character vectors containing image IDs to be included. 
-#' 
-#' @param image_id_column  Name of the column in `image_info` data frame that contains image IDs to be included.
-#' 
-#' @returns A data frame containing all individual tumor records found in `dir_path`.
-#' 
-#' @noRd
 import_individual_slide_tumors <- function(dir_path, image_info, image_id_column = "image_id") {
+  #' Combine individual GLASS-AI image tumor analysis files in a directory.
+  #' 
+  #' @description
+  #' Iterate over each tabular file in `dir_path`, keeping only those images also found in `image_info_df`
+  #' * Expected file name must match an entry in the "slide_id" column of `image_info_df`.
+  #' * `.xlsx`, `.xls`, `.csv`, and `.tsv` are all considered valid file types.
+  
+  #' @param dir_path Formatted character vector containing the path to the directory with the image analysis files produced by GLASS-AI
+  #' 
+  #' @param image_info Data frame or character vectors containing image IDs to be included. 
+  #' 
+  #' @param image_id_column  Name of the column in `image_info` data frame that contains image IDs to be included.
+  #' 
+  #' @returns A data frame containing all individual tumor records found in `dir_path`.
+  #' 
+  #' @noRd
+
   # validate params
   if (!dir.exists(dir_path)) {
     abort("Directory does not exist.")
@@ -332,83 +531,24 @@ import_individual_slide_tumors <- function(dir_path, image_info, image_id_column
   return(merged_tumor_areas)
 }
 
-remove_lowinfo_terms <- function(xdf, xformula) {
-  formulaVars <- all.vars(xformula)
-  yvar <- formulaVars[1]
-  xvars <- formulaVars[-1]
-  # remove subgroup if it's identical to group
-  if (sum(c("group", "subgroup") %in% xvars) == 2) {
-    if (identical(xdf[["group"]], xdf[["subgroup"]]) |
-      nrow(unique(xdf["group"])) == nrow(distinct(xdf, group, subgroup))) {
-      xvars <- xvars[xvars != "subgroup"]
-      xformula <- remove_terms(xformula, "subgroup")
-    }
-  }
-  # remove subindividual if it's identical to individual or does not add any extra information
-  if (sum(c("individual_id", "subindividual_id") %in% xvars) == 2) {
-    if ((identical(xdf[["individual_id"]], xdf[["subindividual_id"]])) |
-      nrow(unique(xdf["individual_id"])) == nrow(distinct(xdf, individual_id, subindividual_id))) {
-      xvars <- xvars[xvars != "subindividual_id"]
-      xformula <- remove_terms(xformula, "subindividual_id")
-    }
-  }
-  return(xformula)
-}
-
-remove_terms <- function(form, term) {
-  fterms <- terms(form)
-  fac <- attr(fterms, "factors")
-  idx <- which(as.logical(fac[term, ]))
-  new_fterms <- drop.terms(fterms, dropx = idx, keep.response = TRUE)
-  return(formula(new_fterms))
-}
-
-generate_valid_comparisons <- function(xdf, xformula) {
-  # get variables from formula
-  formulaVars <- all.vars(xformula)
-  yvar <- formulaVars[1]
-  xvars <- formulaVars[-1]
-
-  full_level_list <- expand.grid(unique(xdf[xvars]))
-  valid_comparison_df <- data_frame(A = character(), B = character())
-  valid_comparison_count <- 0
-  for (icomparison in 1:nrow(full_level_list)) {
-    current_comparison <- as.character(unlist(full_level_list[icomparison, ]))
-    # build combined grouping variable
-    current_comparison_newgroup <- paste0(current_comparison, collapse = ":")
-
-    for (jcomparison in 1:nrow(full_level_list)) {
-      # find comparisons that differ by only 1 variable
-      test_comparison <- as.character(unlist(full_level_list[jcomparison, ]))
-      is_valid <- sum(current_comparison == test_comparison) == length(xvars) - 1
-      # store valid comparisons
-      if (is_valid) {
-        valid_comparison_count <- valid_comparison_count + 1
-        # build combined grouping variable
-        test_comparison_newgroup <- paste0(test_comparison, collapse = ":")
-        # add to list of valid comparisons
-        valid_comparison_df <- valid_comparison_df %>% add_row(
-          A = current_comparison_newgroup,
-          B = test_comparison_newgroup
-        )
-      }
-    }
-  }
-
-  # remove duplicate/reverse comparisons
-  valid_comparison_df <- valid_comparison_df %>%
-    group_by(grp = paste(pmax(A, B), pmin(A, B), sep = "_")) %>%
-    filter(row_number() == 1) %>%
-    ungroup() %>%
-    select(-grp)
-
-  # convert to list of vector pairs to pass as 'comparison' arg in stats test
-  valid_comparion_list <- unname(mapply(c, valid_comparison_df$A, valid_comparison_df$B, SIMPLIFY = F))
-  return(valid_comparion_list)
-}
-
 
 permissive_shapiro <- function(xdf, xformula, p.adj.method = "holm") {
+  #' Safely perform Shapiro-Wilk test of normality on data that might violate assumptions.
+  #' 
+  #' @description
+  #' Performs Shapiro-Wilk test of normality for provided dataframe and formula,
+  #' while handling errors due to small/big sample size or zero variance.
+  #' 
+  #' @param xdf A dataframe that includes the columns named in `xformula`.
+  #' 
+  #' @param xformula A formula defining the response and independent variables to be used in later analyses.
+  #' 
+  #' @param p.adj.method  Name of the p-value adjustment method to use with rstatix::adjust_pvalue().
+  #' 
+  #' @returns A formatted output of rstatix::shapiro_test()
+  #' 
+  #' @noRd
+
   # get variables from formula
   formulaVars <- all.vars(xformula)
   yvar <- formulaVars[1]
@@ -432,7 +572,6 @@ permissive_shapiro <- function(xdf, xformula, p.adj.method = "holm") {
       variable = yvar, statistic = NA, p = NA,
       note = "Zero variability in group"
     )
-    
     
   if (nrow(group_validation[["valid_groups"]]) > 0) {
     shapiro_result <- suppressMessages(
@@ -461,6 +600,25 @@ permissive_shapiro <- function(xdf, xformula, p.adj.method = "holm") {
 }
 
 validate_groups <- function(xdf, xformula, min_count = 3, max_count = Inf, exclude_zero_var = TRUE) {
+  #' Test groups in data frame for statistical assumptions of sample size and variance.
+  #' 
+  #' @description
+  #' Test groups defined within the provided dataframe based on the provided formula
+  #' to see if they are too small (< min_count), too large (> max_count), or have zero variance.
+  #' 
+  #' @param xdf A dataframe that includes the columns named in `xformula`.
+  #' 
+  #' @param xformula A formula defining the response and independent variables to be used in later analyses.
+  #' 
+  #' @param min_count The minimum number of samples required in each group.
+  #' 
+  #' @param max_count The maximum number of samples allowed in each group.
+  #' 
+  #' @param exclude_zero_var If TRUE, groups with zero variance are flagged.
+  #' 
+  #' @returns A named list with groups in each flag condition
+  #' 
+  #' @noRd
   # get grouping variables from formula
   formulaVars <- all.vars(xformula)
   yvar <- formulaVars[1]
@@ -519,7 +677,7 @@ trace_error_parent <- function(error_obj) {
 add_significance_ggplotly <- function(plotly_obj, pairwise_test, omnibus_test, comparison_list) {
   # make df for setting text above groups in plot
   # get test formula variables from statistical tests
-  if (!missing(pairwise_test) && !(sum(class(pairwise_test) == "rstatix_test") == 0)) {
+  if (!missing(pairwise_test) && ("rstatix_test" %in% class(pairwise_test))) {
     test.attributes <- attributes(pairwise_test)
     test_vars <- all.vars(test.attributes$args$formula)
     y_var <- test_vars[1]
@@ -949,8 +1107,7 @@ run_posthoc_test <- function(omnibus, comparison_list, useParametric = "auto", f
     icomparisons <- 0
     # only perform comparisons still in data
     for (comparison in comparison_list) {
-      if ((comparison[[1]] %in% xdf[[tvar]] &&
-        comparison[[2]] %in% xdf[[tvar]])) {
+      if ((comparison[[1]] %in% xdf[[tvar]] && comparison[[2]] %in% xdf[[tvar]])) {
         icomparisons <- icomparisons + 1
         xcomparisons[[icomparisons]] <- comparison
       }
@@ -1139,172 +1296,9 @@ plotlistlist2tabs <- function(plot_list_list, caption_list,
 }
 ```
 
-```{r USER_INPUT, message = FALSE, warning = FALSE}
-#### FILES####
-# path to directory where files are stored
-dir_path <- "path/to/analysis/files"
-dir_path <- normalizePath(dir_path,winslash = "/") #convert Windows paths if needed
-# path to slide info file
-path_to_Slide_Info <- file.path(dir_path, "Slide IDs.xlsx")
-# path to whole slide summary file
-path_to_slide_areas <- file.path(dir_path, "Whole slide summary.xlsx")
-# path to merged tumor area file or directory containing individual slide results
-path_to_tumor_areas <- file.path(dir_path,"GLASS-AI output")
-# define path to folder holding individual IHC stain sub folders labeled by stain
-path_to_ihc_analysis_folder <- "" #file.path(dir_path,"IHC stains")
-# path to GLASS-AI logfile if you want to include in report
-path_to_logfile <- "" #file.path(dir_path, "GLASS-AI output", "GLASS-AI_log_####.txt")
-# define output location for data tables used to make each graph
-path_to_graph_data <- file.path(dir_path, "Graph Data")
-
-
-#### FILTERING####
-# define optional tumor size threshold in sq. micron
-tumor_size_threshold <- 500
-
-#### GROUPING####
-# define variables to use for grouping
-# grouping variable names should be the column name in the `Slide_Info` spreadsheet
-## full_grouping_vars <- c("grouping_var1","grouping_var2",... "grouping_varN")
-full_grouping_vars <- c("grouping_var1","grouping_var2")
-# these are formatted text labels for each grouping variable that will used when making graphs
-full_grouping_vars_labels <- c("Grouping Variable 1", "grouping_var2")
-
-# define order of groups within each grouping variable
-# var_name = c(var_val1, var_val2,... var_valN)
-# repeat for each variable included in `full_grouping_vars` above
-#' full_grouping_order <- list(
-#'  grouping_var1 = c(
-#'    "group1",
-#'    "group2",
-#'    "group3"
-#'  ),
-#'  grouping_var2 = c(
-#'    "groupA",
-#'    "groupB"
-#'  )
-#')
-
-full_grouping_order <- list(
-  grouping_var1 = c(
-    "group1",
-    "group2",
-    "group3"
-  ),
-  grouping_var2 = c(
-    "groupA",
-    "groupB"
-  )
-)
-
-# make formatted labels for each grouping variable level, if desired.
-# use the same structure as above (or just keep full_grouping_order_labels <- full_grouping_order)
-#' full_grouping_order_labels <- list(
-#' grouping_var1 = c(
-#' "Group 1",
-#' "Group 2",
-#' "Group 3"
-#' ),
-#' grouping_var2 = c(
-#' "Group A",
-#' "Group B"
-#' )
-#' )
-full_grouping_order_labels <- full_grouping_order
-
-# define variable used to label individuals
-individual_var <- "animal_id" # title of individual variable column in input files
-individual_var_label <- "Animal ID"
-individual_unit <- "Animal"
-
-# define variable used to label parts from individuals (i.e., multiple images from a single individual)
-subindividual_var <- "image_id" # title of sub-individual variable column in input files
-subindividual_var_label <- "Slide ID"
-subindividual_unit <- "Slide"
-
-#define variables and labels to be used for adding information about individuals to plotly hoverinfo
-#set these to be the same as full_grouping_vars and full_grouping_vars_labels to omit
-## leaving them empty (or NA, NULL, etc.) breaks select() calls in the report.
-#' sample_info_vars <- c("info1","info2")
-#' sample_info_vars_labels <- c("Information 1","Information 2")
-sample_info_vars <- full_grouping_vars
-sample_info_vars_labels <- full_grouping_vars_labels
-
-
-#### GRAPHING###
-# define color for each group using colorblind safe palette
-group_colors <-  c(
-  "black",
-  "dodgerblue2",
-  "#E31A1C", # red
-  "green4",
-  "#6A3D9A", # purple
-  "#FF7F00", # orange
-  "gold1",
-  "skyblue2",
-  "#FB9A99", # lt pink
-  "palegreen2",
-  "#CAB2D6", # lt purple
-  "#FDBF6F", # lt orange
-  "gray70",
-  "khaki2",
-  "maroon",
-  "orchid1",
-  "deeppink1",
-  "blue1",
-  "steelblue4",
-  "darkturquoise",
-  "green1",
-  "yellow4",
-  "yellow3",
-  "darkorange4",
-  "brown"
-)
-# set color scheme for tumor grades (Grade 5, Grade 4, Grade 3, Grade 2, Grade 1)
-tumor_grade_labels <- c("Grade 5","Grade 4", "Grade 3", "Grade 2", "Grade 1")
-tumor_grade_colors <- c("purple","red", "yellow", "blue", "green")
-names(tumor_grade_colors) <- c("5","4","3","2","1")
-
-# should tumor grades be filled with color when used for x-axis?
-redundant_fill <- FALSE
-# margins for plotly objects
-plotly_margins <- list(l = 50, r = 50, b = 50, t = 50)
-
-#### STATS####
-# define comparisons of interest for statistics
-# multiple grouping variables are separated by a ":"
-# use the same values as in `full_grouping_order` above
-full_group_comparisons <- list(
-  c("group1:groupA","group2:groupA"),
-  c("group1:groupA","group3:groupA"),
-  c("group2:groupB","group3:groupB")
-)
-
-# skip statistics if you know they will not work (i.e., < 3 samples in groups)
-skip_stats <- FALSE
-
-# set global parametric/non-parametric test choices
-# TRUE: use parametric, FALSE: use non-parametric, "auto": use parametric if no violation of normality (strict)
-# values >= 0 and <= 1: use parametric if less than this proportion of groups violate normality assumption 
-## this means that useParametric = 1 is equivalent to TRUE and useParametric = 0 is equivalent to FALSE
-
-# comparisons between groups of individuals (Graphs 001 - 027)
-parametric_test_individuals = "auto"
-# comparisons between groups of individual tumors (Graphs 027 - 040)
-parametric_test_tumors = FALSE
-
-
-#### IHC####
-do_ihc_analysis <- FALSE
-
-# manually define stain list
-ihc_stain_list <- c()
-ihc_stain_labels <- c()
-```
-
 ## Data Import
 
-```{r data_import, message = FALSE, warning = FALSE}
+```{r data_import, echo = FALSE, message = FALSE, warning = FALSE}
 # add truncated logfile
 if (file.exists(path_to_logfile)) {
   logfile <- readLines(path_to_logfile)
@@ -1341,7 +1335,7 @@ kable(
   align = c("l", "l")
 )
 
-# read in slide : group pairs from excel file
+# read in slide grouping information file
 Slide_Info <- read_table_file(path_to_Slide_Info) %>%
   clean_names(parsing_option = 3) # convert names to snake_case
 
@@ -1354,7 +1348,7 @@ if ("h_e_image_id" %in% colnames(Slide_Info)) {
   Slide_Info <- Slide_Info %>% mutate(image_id = hne_image_id)
 }else if ("slide_id" %in% colnames(Slide_Info)) {
   Slide_Info <- Slide_Info %>% mutate(image_id = slide_id)
-}else { Slide_Info <- Slide_Info %>% mutate(image_id = !!as.name(subindividual_var))}
+} else { Slide_Info <- Slide_Info %>% mutate(image_id = !!as.name(subindividual_var))}
 
 
 # read in per slide tumor area sheet; convert names to snake_case; convert percentages to decimals
@@ -1402,7 +1396,7 @@ if ("slide_id" %in% colnames(Tumor_Areas)) {
 
 This is where basic data pre-processing and formatting is done.
 
-```{r data_formatting, message=FALSE, warning=FALSE ,collapse = TRUE}
+```{r data_formatting, include = FALSE, message=FALSE, warning=FALSE ,collapse = TRUE}
 if (redundant_fill) {
   area_fill <- "area_grade"
   tumor_fill <- "tumor_grade"
@@ -1412,9 +1406,9 @@ if (redundant_fill) {
 }
 
 #this makes a formatted label for the full grouping variable from each grouping variables
-full_grouping_label <- paste(full_grouping_vars_labels, collapse = " : ")
+full_grouping_label <- paste(full_grouping_vars_labels, collapse = ":")
 #this makes a full grouping label for each tumor grade
-full_grouping_grade_label <- paste(full_grouping_label, "Tumor Grade", sep = " : ")
+full_grouping_grade_label <- paste(full_grouping_label, "Tumor Grade", sep = ":")
 full_group_list <- expand_grid(!!!full_grouping_order) %>% unite("full_group", sep = ":")
 
 # make directory to store graph data tables
@@ -1430,21 +1424,16 @@ Slide_Info <- Slide_Info %>%
 ## Pre-processing of Slide_Areas
 Slide_Areas$image_id <- as.character(Slide_Areas$image_id)
 
-# map animal group to each slide
-Slide_Areas <- Slide_Areas %>% left_join(Slide_Info,
-  by = c("image_id" = "image_id"),
-  suffix = c("", ".y")
-)
+# merge Slide Info into Slide Areas
+Slide_Areas <- Slide_Areas %>% left_join(Slide_Info, by = "image_id")
 
-
-
+# expand tumor grade abbreviations
 Slide_Areas <- Slide_Areas %>% mutate(full_group = factor(full_group, levels = full_group_list[[1]]))
 Slide_Areas <- Slide_Areas %>% setNames(gsub("g1", "grade1", names(.))) # change any 'g1' to 'grade1'
 Slide_Areas <- Slide_Areas %>% setNames(gsub("g2", "grade2", names(.))) # change any 'g2' to 'grade2'
 Slide_Areas <- Slide_Areas %>% setNames(gsub("g3", "grade3", names(.))) # change any 'g3' to 'grade3'
 Slide_Areas <- Slide_Areas %>% setNames(gsub("g4", "grade4", names(.))) # change any 'g4' to 'grade4'
 Slide_Areas <- Slide_Areas %>% setNames(gsub("g5", "grade5", names(.))) # change any 'g5' to 'grade5'
-
 
 # copy values to "individual_id" column and move to first column
 Slide_Areas <- Slide_Areas %>%
@@ -1490,19 +1479,24 @@ Tumor_Areas <- Tumor_Areas %>% setNames(gsub("g5", "grade5", names(.))) # change
 
 tumor_grade_x_limits = c("1","2","3","4")
 #add dummy grade5 columns if not present in tumor files
-if (sum(str_count(colnames(Tumor_Areas),"grade5")) < 2) { 
+if (sum(str_count(colnames(Tumor_Areas),"grade5")) < 2 || max(Tumor_Areas$grade5_area)==0) { 
   Tumor_Areas$grade5_percentage = 0
   Tumor_Areas$grade5_area = 0
-
+  
   count_tumor_grades_analyzed <- 4
+  
+  tumor_grade_labels <- c("Grade 4", "Grade 3", "Grade 2", "Grade 1")
+  tumor_grade_colors <- c("red", "yellow", "blue", "green")
+  names(tumor_grade_colors) <- c("4","3","2","1")
 
 } else {
   tumor_grade_x_limits <- c(tumor_grade_x_limits,"5")
   count_tumor_grades_analyzed <- 5
-  Tumor_Areas <- Tumor_Areas %>% mutate(grade5_area = ifelse(is.na(grade5_area), 0, grade5_area),
-                                        grade5_percentage = ifelse(is.na(grade5_percentage), 0, grade5_percentage)
-                                                                   )
-}
+  Tumor_Areas <- Tumor_Areas %>% 
+    mutate(grade5_area = ifelse(is.na(grade5_area), 0, grade5_area),
+           grade5_percentage = ifelse(is.na(grade5_percentage), 0, grade5_percentage)
+    )
+  }
 
 
 
@@ -1599,7 +1593,7 @@ Tumor_Areas <- Tumor_Areas %>%
 # get combinations of group and tumor_grade
 full_group_count <- nrow(full_group_list)
 full_group_tumor_grade_level_cross <-
-  expand_grid(full_group_list, c(1:5))
+  expand_grid(full_group_list, c(1:count_tumor_grades_analyzed))
 
 # generate pairwise comparisons for group:tumor_grade combinations
 full_group_tumor_grade_comparisons <- list()
@@ -1633,7 +1627,7 @@ full_group_tumor_grade_labels <- setNames(rep(full_group_tumor_grade_labels[[1]]
 group_label_list <- setNames(
   rep(full_group_labels[[1]],
     2,
-    each = 5
+    each = count_tumor_grades_analyzed
   ),
   grouping_levels
 )
@@ -1654,14 +1648,14 @@ full_group_grade_info_list <- setNames(
   c("label", "tumor_grade", "full_group")
 )
 full_group_info_list <- setNames(list(setNames(full_group_labels[[1]], full_group_list[[1]])), "full_group")
-tumor_grade_info_list <- setNames(list(setNames(tumor_grade_labels, c(1:5))), "tumor_grade")
+tumor_grade_info_list <- setNames(list(setNames(tumor_grade_labels, c(1:count_tumor_grades_analyzed))), "tumor_grade")
 rm(group_tumor_grade_level_cross, group_tumor_grade_levels, tumor_grade_group_levels, grouping_levels, group_tumor_grade_labels, group_label_list, tumor_grade_label_list)
 
 present_full_group_labels <- data.frame(label = full_group_labels$label[full_group_labels$label %in% Slide_Areas$full_group])
 present_full_group_labels <- present_full_group_labels %>% mutate(multiline = str_replace_all(label, ":", "\n"))
 ```
 
-```{r ihc_processing, message = FALSE, warning = FALSE}
+```{r ihc_processing, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE}
 # get list of IHC stains by looking for subfolders
 if (do_ihc_analysis) {
   # skip IHC analysis if there are no stain-specific subfolders
@@ -2059,18 +2053,25 @@ kable(Slide_Info, caption = "Table 1: Slide Information")
 <summary>Group Comparisons</summary>
 
 ```{r, message = FALSE, warning = FALSE,}
-kable(as.data.frame(matrix(unlist(full_group_comparisons), ncol = 2, byrow = TRUE)) %>% setNames(c("Group 1", "Group2")), caption = "Table 2: Comparisons to be made")
+kable(as.data.frame(matrix(unlist(full_group_comparisons),
+                           ncol = 2, 
+                           byrow = TRUE)
+                    ) %>% 
+        setNames(c("Group 1", "Group2")), 
+      caption = "Table 2: Comparisons to be made")
 ```
 
 </summary>
 
 ## Data Filtering
 
-```{r tumor_size_filtering, message = FALSE, warning= FALSE}
+```{r tumor_size_filtering, echo = FALSE, message = FALSE, warning= FALSE}
 if (tumor_size_threshold > 0) {
+  filtered_tumors <- Tumor_Areas %>% filter(total_tumor_area < tumor_size_threshold)
   Tumor_Areas <- Tumor_Areas %>% filter(total_tumor_area >= tumor_size_threshold)
   cat(paste(c("Filtered out tumors below", tumor_size_threshold, "sq. microns."), collapse = " "))
   
+  #update slide areas to reflect tumors that were filtered out based on size
   filtered_tumor_totals <- Tumor_Areas %>%
     group_by(image_id) %>%
     mutate(
@@ -2124,30 +2125,44 @@ if (tumor_size_threshold > 0) {
 }
 ```
 
-```{r remove_unmapped_slides, message = FALSE, warning = FALSE, class.output="bg-warning"}
-# remove slides that don't have grouping variable
-Slide_Areas_unmapped <- Slide_Areas %>% filter(rowSums(across(full_grouping_vars, ~ is.na(.))) > 0)
+```{r remove_unmapped_he_slides, echo = TRUE, class.output="bg-success"}
+# remove slides that don't have grouping variable in the provided groups
+Slide_Areas_unmapped <- Slide_Areas %>% filter(!(full_group %in% full_group_list$full_group))
 Slide_Areas <- Slide_Areas %>% anti_join(Slide_Areas_unmapped)
 individual_count <- length(unique(Slide_Areas[[individual_var]]))
 
 # omit tumors from removed slides
-Tumor_Areas_unmapped <- Tumor_Areas %>% semi_join(Slide_Areas_unmapped, by = "image_id")
-Tumor_Areas <- Tumor_Areas %>% anti_join(Tumor_Areas_unmapped)
+unmapped_slide_tumor_count <- Tumor_Areas %>% filter(image_id %in% Slide_Areas_unmapped) %>% nrow()
+Tumor_Areas <- Tumor_Areas %>% filter(!(image_id %in% Slide_Areas_unmapped$image_id))
 slide_number_to_id <- setdiff(slide_number_to_id, Slide_Areas_unmapped$image_id)
 
+#alert user if there are unmapped H&E slides
+unmapped_he_slides_present = FALSE
 if (length(Slide_Areas_unmapped$image_id) > 0 && length(Slide_Areas$image_id) > 0) {
-  cat(paste(c(
-    "Found", length(Slide_Areas_unmapped$image_id), "slides containing",
-    length(Tumor_Areas_unmapped$image_id), "tumors that were unable to be grouped based on the selected grouping variable.
-      \nThese slides and their tumors will be excluded from analysis."
-  ), collapse = " "))
-  kable(select(Slide_Areas_unmapped, "image_id", "animal_id", full_group, "number_of_tumors"), caption = "Ungrouped Slides")
+  unmapped_he_slides_present = TRUE
 } else if (length(Slide_Areas_unmapped$image_id) > 0 && length(Slide_Areas$image_id) == 0) {
-  cat("No slides were succesfully grouped based on selected grouping variable.")
+  unmapped_he_slides_present = TRUE
 } else {
-  cat("All slides successfully grouped based on selected grouping variable")
+  print("All slides successfully grouped based on selected grouping variable")
 }
+```
 
+```{r eval = unmapped_he_slides_present, class.output="bg-warning"}
+if (unmapped_he_slides_present) {
+  if (length(Slide_Areas_unmapped$image_id) > 0 && length(Slide_Areas$image_id) > 0) {
+    cat(paste(c("Found", length(Slide_Areas_unmapped$image_id), "slides containing",
+    unmapped_slide_tumor_count, "tumors that were unable to be grouped based on the selected grouping variable.
+        \nThese slides and their tumors will be excluded from analysis."
+    ), collapse = " "))
+    kable(select(Slide_Areas_unmapped, "image_id", "animal_id", full_group, "number_of_tumors"), caption = "Ungrouped Slides")
+  } else {
+    cat("No slides were succesfully grouped based on selected grouping variable.")
+  }
+}
+```
+
+```{r remove_unmapped_ihc_slides, eval = do_ihc_analysis, class.output="bg-success"}
+ihc_stained_slides_missing = FALSE
 if (do_ihc_analysis) {
   for (stain in ihc_stain_list) {
     expected_stained_slides <- unlist(unique(na.omit(select(Slide_Info, paste(tolower(stain), "image_id", sep = "_")))))
@@ -2155,19 +2170,38 @@ if (do_ihc_analysis) {
     missing_stained_slides <- setdiff(expected_stained_slides, found_stained_slides)
     extra_stained_slides <- setdiff(found_stained_slides, expected_stained_slides)
 
-    if (length(missing_stained_slides) > 0 || length(extra_stained_slides) > 0) {
-      cat(paste(c("Found", length(missing_stained_slides), stain, "stained slides missing:\n",
-        missing_stained_slides,
-        "\nFound", length(extra_stained_slides), stain, "stained slides without a matching H&E slide defined.\n",
-        extra_stained_slides, "\n",
-        collapse = " "
-      )))
-    }
+    if (length(missing_stained_slides) == 0 && length(extra_stained_slides) == 0) {
+      ihc_stained_slides_missing = ihc_stained_slides_missing || FALSE
+    } else {ihc_stained_slides_missing = TRUE}
+  }
+  # output success message if all slides mapped
+  if (ihc_stained_slides_missing == FALSE){
+    cat(paste("Found all expected IHC stained slides."))
   }
 }
 ```
 
-```{r filter_out_excluded_slides, message = FALSE, warning = FALSE, class.output="bg-warning"}
+```{r eval=ihc_stained_slides_missing, class.output="bg-warning"}
+    if (ihc_stained_slides_missing) {
+      ihc_stained_slides_missing = TRUE
+      for (stain in ihc_stain_list) {
+        expected_stained_slides <- unlist(unique(na.omit(select(Slide_Info, paste(tolower(stain), "image_id", sep = "_")))))
+        found_stained_slides <- unlist(unique(na.omit(select(Slide_Areas, paste(stain, "image_id", sep = "_")))))
+        missing_stained_slides <- setdiff(expected_stained_slides, found_stained_slides)
+        extra_stained_slides <- setdiff(found_stained_slides, expected_stained_slides)
+      
+        cat(paste(c("Found", length(missing_stained_slides), stain, 
+                    "stained slides missing:\n", missing_stained_slides,
+                    "\nFound", length(extra_stained_slides), stain,
+                    "stained slides without a matching H&E slide defined.\n",
+        extra_stained_slides, "\n",
+        collapse = " "
+      )))
+        }
+    } else {ihc_stained_slides_missing = TRUE}
+```
+
+```{r filter_out_excluded_slides, class.output="bg-success"}
 # find excluded slides based on 'exclude_reason' in slide definition sheet
 if ("exclude_reason" %in% colnames(Slide_Info)) {
   excluded_slides <- Slide_Info %>% filter(!is.na(exclude_reason))
@@ -2181,29 +2215,23 @@ if ("exclude_reason" %in% colnames(Slide_Info)) {
   Tumor_Areas <- Tumor_Areas %>% anti_join(Tumor_Areas_excluded)
 
   excluded_count <- length(unique(excluded_slides$image_id))
+  excluded_he_slides_present = FALSE
   if (excluded_count > 0) {
-    cat(paste(c(
-      "Found", excluded_count, "slides containing",
-      length(Tumor_Areas_excluded$image_id), "tumors that were manually flagged for exclusion."
-    )))
-    cat("\nThese slides are highlighted in red in the Panel A below and excluded from further analyses.")
-    kable(select(Slide_Areas_excluded, "image_id", "animal_id", full_group, "number_of_tumors", "exclude_reason"), caption = "Excluded slides")
+    excluded_he_slides_present = TRUE
   } else {
     cat("No slides were manually flagged for exclusion.")
   }
 } else {
-  cat("No slides were manually flagged for exclusion. 'Exclude_reason' column not present in Slide Information File.")
+  cat("No slides were manually flagged for exclusion. 'exclude_reason' column not present in Slide Information File.")
 }
 ```
-
-```{r check_for_multiple_slides, message = FALSE, warning = FALSE, class.output="bg-warning"}
-multiple_h_e_slides <- Slide_Info %>% get_dupes(animal_id)
-dupe_count <- length(unique(multiple_h_e_slides$animal_id))
-if (dupe_count > 0) {
-  cat(paste(c("Found", dupe_count, "animals with multiple H&E stained slides"), collapse = " "))
-  kable(select(multiple_h_e_slides, animal_id:image_id))
-} else {
-  cat("No animals with multiple H&E slides found in dataset.")
+```{r eval = excluded_he_slides_present, class.output="bg-warning"}
+if (excluded_he_slides_present){
+  cat(paste(c(
+        "Found", excluded_count, "slides containing",
+        length(Tumor_Areas_excluded$image_id), "tumors that were manually flagged for exclusion."
+      )))
+  kable(select(Slide_Areas_excluded, "image_id", "animal_id", full_group, "number_of_tumors", "exclude_reason"), caption = "Excluded slides")
 }
 ```
 
@@ -2336,7 +2364,7 @@ graph_data <- Slide_Areas %>%
     total_number_of_tumors = sum(number_of_tumors),
     subindividual_count = n()
   ) %>%
-  slice(1)
+  slice(1) %>% ungroup()
 
 # perform statistical comparisons
 graph_formula <- total_number_of_tumors ~ full_group
@@ -2453,6 +2481,7 @@ plot1 <- graph_data %>%
   rowwise() %>%
   make_formatted_labels(full_grouping_vars,full_grouping_vars_labels,"grouping_labels") %>%
   make_formatted_labels(sample_info_vars,sample_info_vars_labels,"sample_info_labels") %>%
+  ungroup() %>%
   ggplot(aes(
     x = individual_id,
     y = tumor_count_in_individual,
@@ -2467,10 +2496,14 @@ plot1 <- graph_data %>%
     )
   )) +
   geom_col(position = "stack") +
-  # fill bars using colors based on area grade
-  scale_fill_manual(values = tumor_grade_colors, drop = FALSE) +
-  # outline bars using colors based on group
-  scale_color_manual(values = group_colors, drop = FALSE) +
+  scale_fill_manual(
+    values = tumor_grade_colors,
+    labels = tumor_grade_labels
+  ) +
+  scale_color_manual(
+    values = group_colors,
+    labels = full_group_labels
+  ) +
   # add descriptive title and subtitle
   ggtitle(
     "Tumor counts",
@@ -2505,7 +2538,8 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     margin = plotly_margins
   ) %>%
   format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list, "label")
+  format_plotly_legend("full_group", full_group_grade_info_list, "label") %>%
+  collapse_ggplotly_geom_bar()
 
 
 # write graph data to file
@@ -2607,7 +2641,8 @@ ggplotly_subtitle(plot2, hoverinfo = c("text")) %>%
     )
   ) %>%
   format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list, "label")
+  format_plotly_legend("full_group", full_group_grade_info_list, "label") %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_004_data.csv"), row.names = FALSE)
@@ -2708,7 +2743,8 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     )
   ) %>%
   format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list)
+  format_plotly_legend("full_group", full_group_grade_info_list) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_004_data.csv"), row.names = FALSE)
@@ -2914,7 +2950,9 @@ plot1 <- graph_data %>%
     width = min(150 * individual_count, 800),
     margin = plotly_margins
   ) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list, "label")
+    format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label") %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_007_data.csv"), row.names = FALSE)
@@ -2997,7 +3035,8 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     margin = plotly_margins
   ) %>%
   format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list)
+  format_plotly_legend("full_group", full_group_grade_info_list) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_008_data.csv"), row.names = FALSE)
@@ -3028,7 +3067,7 @@ graph_data <- Tumor_Areas %>%
   )
 
 # perform statistics
-graph_formula <- remove_lowinfo_terms(graph_data, tumor_proportion_in_individual ~ full_group * tumor_grade)
+graph_formula <- tumor_proportion_in_individual ~ full_group * tumor_grade
 stats_summary <- run_stats_summary(graph_data, graph_formula)
 if (!skip_stats) {
   omni_test <- run_omnibus_test(stats_summary, useParametric = parametric_test_individuals)
@@ -3439,6 +3478,7 @@ graph_data <- Slide_Areas %>%
     ),
     labels = c("5","4", "3", "2", "1")
   )) %>%
+  filter(area_grade %in% tumor_grade_x_limits) %>%
   group_by(full_group, individual_id, area_grade) %>%
   mutate(subindividual_count = n_distinct(subindividual_id)) %>%
   group_by(full_group, individual_id, area_grade) %>%
@@ -3482,8 +3522,6 @@ plot1 <- graph_data %>%
   labs(x = individual_var_label, y = "Tumor area (sq. micron)") # make y-axis label more descriptive
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
   layout(
     legend = list(
       orientation = "v",
@@ -3499,7 +3537,11 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     xaxis = list(tickangle = -90, tickfont = list(size = min(10, 0.8 * min(50 * individual_count, 800) / individual_count))),
     width = min(c(200 * individual_count, 800)),
     margin = list(plotly_margins)
-  )
+  ) %>%
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
+
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_013_data.csv"), row.names = FALSE)
@@ -3569,8 +3611,6 @@ plot1 <- graph_data %>%
   labs(x = individual_var_label, y = "Tumor area (sq. micron)") # make y-axis label more descriptive
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       orientation = "v",
@@ -3586,7 +3626,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     xaxis = list(tickangle = -90, tickfont = list(size = min(10, 0.8 * min(50 * individual_count, 800) / individual_count))),
     width = min(c(200 * individual_count, 800)),
     margin = list(plotly_margins)
-  )
+  ) %>%
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_014_data.csv"), row.names = FALSE)
@@ -3780,22 +3823,15 @@ plot1 <- graph_data %>%
   ) %>%
   mutate(across("area_grade", \(x) str_replace(x, "grade", ""))) %>%
   mutate(across("area_grade", \(x) str_replace(x, "_proportion_in_individual", ""))) %>%
-  # rearrange graph so grade 4 is on top
-  mutate(area_grade = factor(
-    area_grade,
-    levels = c(
-      "5",
-      "4",
-      "3",
-      "2",
-      "1"
-      )
+  # rearrange graph so highest grade is on top
+  mutate(area_grade = factor(area_grade, levels = as.character(c(count_tumor_grades_analyzed:1))
     )
   ) %>%
+  filter(area_grade %in% tumor_grade_x_limits) %>% 
   ggplot(aes(
     x = individual_id,
     y = grade_proportion_in_individual,
-    fill = area_grade,
+    fill = droplevels(area_grade),
     color = full_group,
     text = paste0(
       "</br>",
@@ -3815,8 +3851,6 @@ plot1 <- graph_data %>%
   labs(x = individual_var_label, y = "Proportion of tumor area")
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       groupclick = "toggleitem",
@@ -3845,7 +3879,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     ),
     width = min(200 * individual_count, 800),
     margin = plotly_margins
-  )
+  ) %>% 
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_016_data.csv"), row.names = FALSE)
@@ -4059,8 +4096,6 @@ plot1 <- graph_data %>%
   labs(x = individual_var_label, y = "Proportion of tumor area") # make y-axis label more descriptive
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       groupclick = "toggleitem",
@@ -4074,7 +4109,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     xaxis = list(tickangle = -90, tickfont = list(size = min(10, 0.8 * min(50 * individual_count, 800) / individual_count))),
     width = min(200 * individual_count, 800),
     margin = plotly_margins
-  )
+  ) %>% 
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_018_data.csv"), row.names = FALSE)
@@ -4143,8 +4181,6 @@ plot1 <- graph_data %>%
   labs(x = full_grouping_label, y = "Tumor area (sq. micron)") # make y-axis label more descriptive
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       groupclick = "toggleitem",
@@ -4162,7 +4198,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     ),
     width = min(200 * full_group_count, 800),
     margin = plotly_margins
-  )
+  ) %>% 
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_019_data.csv"), row.names = FALSE)
@@ -4312,16 +4351,9 @@ plot1 <- graph_data %>%
   # format 'area_grade' to be numbers only
   mutate(across("area_grade", \(x) str_replace(x, "grade", ""))) %>%
   mutate(across("area_grade", \(x) str_replace(x, "_proportion_of_lung_area", ""))) %>%
-  # rearrange graph so grade 4 is on top
-  mutate(area_grade = factor(area_grade,
-    levels = c(
-      "5",
-      "4",
-      "3",
-      "2",
-      "1"
-    )
-  )) %>%
+  # rearrange graph so highest grade is on top
+  mutate(area_grade = factor(area_grade, levels = as.character(c(count_tumor_grades_analyzed:1)))) %>%
+  filter(area_grade %in% tumor_grade_x_limits) %>%
   ggplot(aes(
     x = individual_id,
     y = proportion_of_lung_area,
@@ -4348,8 +4380,6 @@ plot1 <- graph_data %>%
   labs(x = "Slide ID", y = "Proportion of lung area") # make y-axis label more descriptive
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       groupclick = "toggleitem",
@@ -4363,7 +4393,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     xaxis = list(tickangle = -90, tickfont = list(size = min(10, 0.8 * min(50 * individual_count, 800) / individual_count))),
     width = min(c(150 * individual_count, 800)),
     margin = plotly_margins
-  )
+  ) %>%
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_021_data.csv"), row.names = FALSE)
@@ -4478,8 +4511,6 @@ plot1 <- graph_data %>%
   labs(x = full_grouping_label, y = "Proportion of lung area")
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       groupclick = "toggleitem",
@@ -4507,7 +4538,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     ),
     width = min(c(200 * full_group_count, 800)),
     margin = plotly_margins
-  )
+  ) %>%
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_022_data.csv"), row.names = FALSE)
@@ -4745,6 +4779,7 @@ graph_data <- Tumor_Areas %>%
      total_graded_tumor_area_in_individual = sum(total_area_of_graded_tumors),
      total_grade_tumor_proportion_of_lung_area = total_graded_tumor_area_in_individual /
       total_tissue_area_in_individual) %>% 
+  slice(1) %>%
   ungroup() %>%
   select(
     individual_id, full_group,
@@ -4801,8 +4836,6 @@ plot1 <- graph_data %>%
 
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       groupclick = "toggleitem",
@@ -4826,7 +4859,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     ),
     width = min(150 * individual_count, 800),
     margin = plotly_margins
-  )
+  ) %>%
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_025_data.csv"), row.names = FALSE)
@@ -4947,8 +4983,6 @@ plot1 <- graph_data %>%
   labs(x = full_grouping_label, y = "Proportion of lung area")
 
 ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
-  format_plotly_trace("bar", width = 0.7) %>%
-  format_plotly_legend("full_group", full_group_grade_info_list) %>%
   layout(
     legend = list(
       groupclick = "toggleitem",
@@ -4972,7 +5006,10 @@ ggplotly_subtitle(plot1, hoverinfo = c("text")) %>%
     ),
     width = min(200 * full_group_count, 800),
     margin = plotly_margins
-  )
+  ) %>%
+  format_plotly_trace("bar", width = 0.7) %>%
+  format_plotly_legend("full_group", full_group_grade_info_list, "label", verbose = T) %>%
+  collapse_ggplotly_geom_bar()
 
 # write graph data to file
 write.csv(graph_data, file.path(path_to_graph_data, "graph_026_data.csv"), row.names = FALSE)
@@ -6395,11 +6432,11 @@ figure_caption <- paste0(
   )
 ```
 
-```{r end_of_he_analysis}
+```{r end_of_he_analysis, include = FALSE}
 # DONE WITH H&E ANALYSIS
 ```
 
-```{r add_ihc_headers, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r add_ihc_headers, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 # make headings
 if (do_ihc_analysis) {
   cat("## IHC analysis {.tabset .tabset-fade .tabset-pills} \n")
@@ -6408,14 +6445,14 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r initialize_ihc_containers, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r initialize_ihc_containers, eval = do_ihc_analysis, include = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 # initialize variables for storing plots for each IHC stain in the block of plots
 ihc_plot_number <- 0
 ihc_plots <- list()
 plot_captions <- list()
 ```
 
-```{r ihc_graph_001, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_001, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Plot of total IHC stained cells throughout each slide. This count includes both tumor and non-tumor areas."
@@ -6465,7 +6502,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_002, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_002, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Plot of total IHC stained cells throught each slide by location in tumor or normal areas."
@@ -6541,7 +6578,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r plot_stained_cell_counts, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_stained_cell_counts, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   cat("##### Stained cell counts {.tabset .tabset-fade .tabset-pills} \n")
   # create tabset for each stain and draw plots
@@ -6555,7 +6592,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_003, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_003, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <-
@@ -6638,7 +6675,7 @@ This does not account for differences in cell counts, tissue size, tumor counts,
 }
 ```
 
-```{r ihc_graph_004, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_004, eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- paste("Boxplot showing the proportion of the positively stained cells within the slide for each", group_var_label, ".
@@ -6723,7 +6760,7 @@ This does not account for differences in cell counts, tissue size, tumor counts,
 }
 ```
 
-```{r ihc_graph_005, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_005, eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <-
@@ -6807,7 +6844,7 @@ This is calculated using the total number of positively stained cells in each re
 }
 ```
 
-```{r ihc_graph_006, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_006, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- paste("Boxplot showing the proportion of the cells that positvely stained within the slide for each", group_var_label, ".
@@ -6893,7 +6930,7 @@ This is calculated using the total number of positively stained cells in each re
 }
 ```
 
-```{r plot_stained_cell_proportions, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_stained_cell_proportions, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # add heading
   cat("##### Stained cell proportion {.tabset .tabset-fade .tabset-pills} \n")
@@ -6909,7 +6946,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_007, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_007, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Density of positively stained cells (per sq. mm) in each slide"
@@ -6969,7 +7006,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_008, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_008, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Density of positively stained cells (per sq. mm) in each slide by area type (Normal or Tumor)"
@@ -7047,7 +7084,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_009, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_009, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Average density of positively stained cells by area grade in each group"
@@ -7149,7 +7186,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_010, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_010, eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Density of positive nuclei within each grade per slide."
@@ -7230,7 +7267,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_011, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_011, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Plot description goes here..."
@@ -7316,19 +7353,19 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r tumor_only_ihc_analysis}
+```{r tumor_only_ihc_analysis, eval = do_ihc_analysis,}
 if (do_ihc_analysis) {
   cat("#### Tumor-only IHC analysis {.tabset .tabset-fade .tabset-pills} \n")
 }
 ```
 
-```{r tumor_stained_cell_counts}
+```{r tumor_stained_cell_count, eval = do_ihc_analysis, s}
 if (do_ihc_analysis) {
   cat("##### Stained cell counts {.tabset .tabset-fade .tabset-pills} \n\n")
 }
 ```
 
-```{r ihc_graph_012, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_012, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Plot count of IHC stained cells in each slide
   plot_caption <- "Plot of total IHC stained cells in the tumor areas of each slide annotated by GLASS-AI."
@@ -7374,7 +7411,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r, echo = FALSE, eval = do_ihc_analysis, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Description of this plot goes here..."
@@ -7433,7 +7470,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_013, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_013, eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Description of this plot goes here..."
@@ -7513,7 +7550,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_014, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_014,eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Description of this plot goes here..."
@@ -7603,7 +7640,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r plot_tumor_stained_cell_counts, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_tumor_stained_cell_counts, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # create tabset for each stain and draw plots
   if (ihc_plot_number > 0) {
@@ -7616,14 +7653,14 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r tumor_stained_cell_proportions}
+```{r tumor_stained_cell_proportions, eval = do_ihc_analysis, }
 if (do_ihc_analysis) {
   # add heading
   cat("##### Stained cell proportion {.tabset .tabset-fade .tabset-pills} \n")
 }
 ```
 
-```{r ihc_graph_015, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_015, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <-
@@ -7712,7 +7749,7 @@ This does not account for differences in cell counts, tumor counts, or tumor bur
 }
 ```
 
-```{r ihc_graph_016, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_016, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Average proportion of positively stained cells by area grade in each slide"
@@ -7811,7 +7848,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_017, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_017, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "proportion of positive nuclei within each grade per slide."
@@ -7892,7 +7929,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_018, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_018, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Plot description goes here..."
@@ -7960,7 +7997,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r plot_tumor_stained_cell_proportions, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_tumor_stained_cell_proportions, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # create tabset for each stain and draw plots
   if (ihc_plot_number > 0) {
@@ -7973,14 +8010,14 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r tumor_stained_cell_densities, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r tumor_stained_cell_densities, eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # add heading
   cat("##### Stained cell density {.tabset .tabset-fade .tabset-pills} \n")
 }
 ```
 
-```{r ihc_graph_019, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_019, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Average density of positively stained cells by area grade in each slide"
@@ -8066,7 +8103,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_020, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_020, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Average density of positively stained cells by area grade in each group"
@@ -8168,7 +8205,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_021, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_021, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Density of positive nuclei within each grade per slide."
@@ -8249,7 +8286,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_022, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_022,eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # Describe what the plot shows
   plot_caption <- "Plot description goes here..."
@@ -8330,21 +8367,21 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r peritumor_ihc_analysis}
+```{r peritumor_ihc_analysis, eval = do_ihc_analysis, }
 if (do_ihc_analysis) {
   # add headings
   cat("#### Peri-tumor IHC analysis {.tabset .tabset-fade .tabset-pills} \n")
 }
 ```
 
-```{r peritumor_stained_cell_counts}
+```{r peritumor_stained_cell_counts, eval = do_ihc_analysis, }
 if (do_ihc_analysis) {
   # add headings
   cat("##### Stained cell counts {.tabset .tabset-fade .tabset-pills} \n")
 }
 ```
 
-```{r ihc_graph_023, include=FALSE, results = 'asis'}
+```{r ihc_graph_023,eval = do_ihc_analysis, results = 'asis'}
 if (do_ihc_analysis) {
   # plot count of positive cells in tumor regions for each slide
   ihc_plot_number <- ihc_plot_number + 1
@@ -8400,7 +8437,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_024, include = FALSE, results = 'asis'}
+```{r ihc_graph_024, eval = do_ihc_analysis, results = 'asis'}
 if (do_ihc_analysis) {
   # plot boxplot of count of positive cells in tumor regions for each slide
   ihc_plot_number <- ihc_plot_number + 1
@@ -8474,7 +8511,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_025, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_025,eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   ihc_plot_number <- ihc_plot_number + 1
   stain_number <- 0
@@ -8533,7 +8570,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_026, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_026,eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   ihc_plot_number <- ihc_plot_number + 1
   stain_number <- 0
@@ -8598,7 +8635,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_027, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_027,eval = do_ihc_analysis,  echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   ihc_plot_number <- ihc_plot_number + 1
   stain_number <- 0
@@ -8657,7 +8694,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r plot_peritumor_stained_cell_counts, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_peritumor_stained_cell_counts, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # create tabset for each stain and draw plots
   if (ihc_plot_number > 0) {
@@ -8685,7 +8722,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r ihc_graph_028, echo = FALSE, message = FALSE, warning = FALSE, results='asis'}
+```{r ihc_graph_028, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results='asis'}
 if (do_ihc_analysis) {
   ihc_plot_number <- ihc_plot_number + 1
   stain_number <- 0
@@ -8767,7 +8804,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r plot_multi_stained_cell_counts, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_multi_stained_cell_counts, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # create tabset for each stain and draw plots
   if (ihc_plot_number > 0) {
@@ -8781,14 +8818,14 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r multi_ihc_stained_cell_proportions}
+```{r multi_ihc_stained_cell_proportions, eval = do_ihc_analysis, }
 if (do_ihc_analysis) {
   # add heading
   cat("##### Stained cell proportions {.tabset .tabset-fade .tabset-pills} \n")
 }
 ```
 
-```{r ihc_graph_029, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r ihc_graph_029, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   ihc_plot_number <- ihc_plot_number + 1
   stain_number <- 0
@@ -8876,7 +8913,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r plot_multi_ihc_stained_cell_proportions, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_multi_ihc_stained_cell_proportions, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # create tabset for each stain and draw plots
   if (ihc_plot_number > 0) {
@@ -8890,7 +8927,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r multi_ihc_stained_cell_densities}
+```{r multi_ihc_stained_cell_densities, eval = do_ihc_analysis, }
 if (do_ihc_analysis) {
   # add heading
   cat("##### Stained cell densities {.tabset .tabset-fade .tabset-pills} \n")
@@ -8985,7 +9022,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r plot_multi_ihcstained_cell_densities, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+```{r plot_multi_ihcstained_cell_densities, eval = do_ihc_analysis, echo = FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 if (do_ihc_analysis) {
   # create tabset for each stain and draw plots
   if (ihc_plot_number > 0) {
