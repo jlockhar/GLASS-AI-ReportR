@@ -10,7 +10,7 @@ output:
 editor_options:
   markdown:
     wrap: 80
-script_updated: March 12, 2025
+script_updated: March 18, 2025
 ---
 
 ```{r USER_INPUT, include = FALSE, message = FALSE, warning = FALSE}
@@ -1405,12 +1405,6 @@ if (redundant_fill) {
   tumor_fill <- NULL
 }
 
-#this makes a formatted label for the full grouping variable from each grouping variables
-full_grouping_label <- paste(full_grouping_vars_labels, collapse = ":")
-#this makes a full grouping label for each tumor grade
-full_grouping_grade_label <- paste(full_grouping_label, "Tumor Grade", sep = ":")
-full_group_list <- expand_grid(!!!full_grouping_order) %>% unite("full_group", sep = ":")
-
 # make directory to store graph data tables
 dir.create(path_to_graph_data)
 
@@ -1420,6 +1414,14 @@ Slide_Info$image_id <- as.character(Slide_Info$image_id)
 Slide_Info <- Slide_Info %>%
   rowwise() %>%
   mutate(full_group = paste0(c_across(all_of(full_grouping_vars)), collapse = ":"))
+
+#this makes a formatted label for the full grouping variable from each grouping variables
+full_grouping_label <- paste(full_grouping_vars_labels, collapse = ":")
+#this makes a full grouping label for each tumor grade
+full_grouping_grade_label <- paste(full_grouping_label, "Tumor Grade", sep = ":")
+full_group_list <- expand_grid(!!!full_grouping_order) %>% 
+  unite("full_group", sep = ":") %>%
+  filter(full_group %in% Slide_Info$full_group)
 
 ## Pre-processing of Slide_Areas
 Slide_Areas$image_id <- as.character(Slide_Areas$image_id)
@@ -1598,13 +1600,14 @@ full_group_tumor_grade_level_cross <-
 # generate pairwise comparisons for group:tumor_grade combinations
 full_group_tumor_grade_comparisons <- list()
 comparison_count <- 0
-for (i in 1:5) {
+for (i in 1:count_tumor_grades_analyzed) {
   for (j in 1:(length(full_group_comparisons))) {
     comparison_count <- comparison_count + 1
     full_group_tumor_grade_comparisons[[comparison_count]] <-
       c(paste0(full_group_comparisons[[j]][[1]], ":", i), paste0(full_group_comparisons[[j]][[2]], ":", i))
   }
 }
+# make lists of named vectors for formatting plotly legends
 # (full_group,tumor_grade)
 full_group_tumor_grade_levels <- paste0(
   "(", full_group_tumor_grade_level_cross[[1]], ",",
@@ -1621,6 +1624,13 @@ grouping_levels <- c(full_group_tumor_grade_levels, tumor_grade_full_group_level
 # get combinations of group_labels and tumor_grade_labels "full_group_label:tumor_grade_label"
 full_group_labels <- expand_grid(!!!full_grouping_order_labels) %>%
   unite("label", sep = ":")
+# remove full_group_labels that are not present in the data
+keep_full_groups <- expand_grid(!!!full_grouping_order) %>% 
+  unite("full_group", sep = ":") %>% 
+  pull(full_group) %in% Slide_Info$full_group
+full_group_labels <- full_group_labels[keep_full_groups,]
+  
+
 full_group_tumor_grade_labels <- expand_grid(full_group_labels, rev(tumor_grade_labels)) %>% unite("label", sep = ":")
 full_group_tumor_grade_labels <- setNames(rep(full_group_tumor_grade_labels[[1]], 2), grouping_levels)
 
@@ -2132,7 +2142,7 @@ Slide_Areas <- Slide_Areas %>% anti_join(Slide_Areas_unmapped)
 individual_count <- length(unique(Slide_Areas[[individual_var]]))
 
 # omit tumors from removed slides
-unmapped_slide_tumor_count <- Tumor_Areas %>% filter(image_id %in% Slide_Areas_unmapped) %>% nrow()
+unmapped_slide_tumor_count <- Tumor_Areas %>% filter(image_id %in% Slide_Areas_unmapped$image_id) %>% nrow()
 Tumor_Areas <- Tumor_Areas %>% filter(!(image_id %in% Slide_Areas_unmapped$image_id))
 slide_number_to_id <- setdiff(slide_number_to_id, Slide_Areas_unmapped$image_id)
 
@@ -2154,14 +2164,14 @@ if (unmapped_he_slides_present) {
     unmapped_slide_tumor_count, "tumors that were unable to be grouped based on the selected grouping variable.
         \nThese slides and their tumors will be excluded from analysis."
     ), collapse = " "))
-    kable(select(Slide_Areas_unmapped, "image_id", "animal_id", full_group, "number_of_tumors"), caption = "Ungrouped Slides")
+    kable(select(Slide_Areas_unmapped, "image_id", individual_var, full_group, "number_of_tumors"), caption = "Ungrouped Slides")
   } else {
     cat("No slides were succesfully grouped based on selected grouping variable.")
   }
 }
 ```
 
-```{r remove_unmapped_ihc_slides, eval = do_ihc_analysis, class.output="bg-success"}
+```{r remove_unmapped_ihc_slides, class.output="bg-success"}
 ihc_stained_slides_missing = FALSE
 if (do_ihc_analysis) {
   for (stain in ihc_stain_list) {
@@ -2181,7 +2191,7 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r eval=ihc_stained_slides_missing, class.output="bg-warning"}
+```{r eval = ihc_stained_slides_missing, class.output="bg-warning"}
     if (ihc_stained_slides_missing) {
       ihc_stained_slides_missing = TRUE
       for (stain in ihc_stain_list) {
@@ -2220,9 +2230,11 @@ if ("exclude_reason" %in% colnames(Slide_Info)) {
     excluded_he_slides_present = TRUE
   } else {
     cat("No slides were manually flagged for exclusion.")
+    excluded_he_slides_present = FALSE
   }
 } else {
   cat("No slides were manually flagged for exclusion. 'exclude_reason' column not present in Slide Information File.")
+  excluded_he_slides_present = FALSE
 }
 ```
 ```{r eval = excluded_he_slides_present, class.output="bg-warning"}
@@ -2231,7 +2243,7 @@ if (excluded_he_slides_present){
         "Found", excluded_count, "slides containing",
         length(Tumor_Areas_excluded$image_id), "tumors that were manually flagged for exclusion."
       )))
-  kable(select(Slide_Areas_excluded, "image_id", "animal_id", full_group, "number_of_tumors", "exclude_reason"), caption = "Excluded slides")
+  kable(select(Slide_Areas_excluded, "image_id", individual_var, full_group, "number_of_tumors", "exclude_reason"), caption = "Excluded slides")
 }
 ```
 
@@ -2285,8 +2297,8 @@ plot1 <- graph_data %>%
     )
   ))
 plot1 <- plot1 +
-  geom_point() + 
-    {if (max(plot1$data$subindividual_count) > 1) 
+  geom_point() +
+    {if (max(plot1$data$subindividual_count) > 1)
   list(stat_summary(
     fun = mean,
     fun.min = min,
@@ -4474,7 +4486,8 @@ plot1 <- graph_data %>%
       "2",
       "1"
     )
-  )) %>%
+  )) %>% 
+  filter(area_grade  %in% tumor_grade_x_limits) %>% 
   ggplot(aes(
     x = full_group,
     y = proportion_of_lung_area,
@@ -7353,13 +7366,13 @@ if (do_ihc_analysis) {
 }
 ```
 
-```{r tumor_only_ihc_analysis, eval = do_ihc_analysis,}
+```{r tumor_only_ihc_analysis, eval = do_ihc_analysis}
 if (do_ihc_analysis) {
   cat("#### Tumor-only IHC analysis {.tabset .tabset-fade .tabset-pills} \n")
 }
 ```
 
-```{r tumor_stained_cell_count, eval = do_ihc_analysis, s}
+```{r tumor_stained_cell_count, eval = do_ihc_analysis}
 if (do_ihc_analysis) {
   cat("##### Stained cell counts {.tabset .tabset-fade .tabset-pills} \n\n")
 }
